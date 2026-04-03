@@ -1,0 +1,14 @@
+services:
+  test:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: >
+      python -m pytest harness/tests/
+      -v
+      --tb=short
+      --cov=src
+      --cov-report=term-missing
+      --junitxml=reports/test-results.xml
+    volumes:
+      - ../reports:/app/reports

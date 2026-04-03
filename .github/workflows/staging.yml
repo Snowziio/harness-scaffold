@@ -1,0 +1,85 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to ACR
+        run: |
+          docker login \
+            --username ${{ secrets.ACR_USERNAME }} \
+            --password ${{ secrets.ACR_PASSWORD }} \
+            ${{ secrets.ACR_REGISTRY }}
+
+      - name: Build and push image
+        id: build
+        run: |
+          IMAGE=${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/${{ github.event.repository.name }}
+          TAG=${{ github.sha }}
+          docker build -f docker/Dockerfile -t $IMAGE:$TAG -t $IMAGE:latest .
+          docker push $IMAGE:$TAG
+          docker push $IMAGE:latest
+          echo "image_tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Deploy to Staging ECS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          script: |
+            set -e
+            APP=${{ github.event.repository.name }}
+            DIR=~/staging/$APP
+            mkdir -p $DIR
+
+            # 登录 ACR
+            docker login \
+              --username ${{ secrets.ACR_USERNAME }} \
+              --password ${{ secrets.ACR_PASSWORD }} \
+              ${{ secrets.ACR_REGISTRY }}
+
+            # 写入环境变量文件
+            cat > $DIR/.env << EOF
+            ACR_REGISTRY=${{ secrets.ACR_REGISTRY }}
+            ACR_NAMESPACE=${{ secrets.ACR_NAMESPACE }}
+            APP_NAME=$APP
+            IMAGE_TAG=${{ steps.build.outputs.image_tag }}
+            STAGING_PORT=8001
+            EOF
+
+            # 拉取并启动
+            docker pull ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/$APP:${{ steps.build.outputs.image_tag }}
+            cd $DIR
+            docker compose -f ~/staging/$APP/docker-compose.staging.yml --env-file .env up -d --pull always
+
+      - name: Copy staging compose file
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          source: docker/docker-compose.staging.yml
+          target: ~/staging/${{ github.event.repository.name }}/
+          strip_components: 1
+
+      - name: Smoke test
+        run: |
+          sleep 15
+          curl --retry 5 --retry-delay 3 --fail \
+            http://${{ secrets.ECS_HOST }}:8001/health
+
+      - name: Notify Feishu staging ready
+        run: |
+          python scripts/notify_feishu.py \
+            --event staging_ready \
+            --repo "${{ github.repository }}" \
+            --sha "${{ github.sha }}"
+        env:
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}

@@ -1,0 +1,8 @@
+services:
+  app:
+    image: ${ACR_REGISTRY}/${ACR_NAMESPACE}/${APP_NAME}:${IMAGE_TAG:-latest}
+    ports:
+      - "${STAGING_PORT:-8000}:8000"
+    environment:
+      - ENV=staging
+    restart: unless-stopped
