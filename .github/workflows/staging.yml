@@ -27,6 +27,16 @@ jobs:
           docker push $IMAGE:latest
           echo "image_tag=$TAG" >> $GITHUB_OUTPUT
 
+      - name: Copy staging compose file
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          source: docker/docker-compose.staging.yml
+          target: ~/staging/${{ github.event.repository.name }}/
+          strip_components: 1
+
       - name: Deploy to Staging ECS
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -58,16 +68,6 @@ jobs:
             docker pull ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/$APP:${{ steps.build.outputs.image_tag }}
             cd $DIR
             docker compose -f ~/staging/$APP/docker-compose.staging.yml --env-file .env up -d --pull always
-
-      - name: Copy staging compose file
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.ECS_HOST }}
-          username: ${{ secrets.ECS_USER }}
-          key: ${{ secrets.ECS_SSH_KEY }}
-          source: docker/docker-compose.staging.yml
-          target: ~/staging/${{ github.event.repository.name }}/
-          strip_components: 1
 
       - name: Smoke test
         run: |
