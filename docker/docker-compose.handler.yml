@@ -6,5 +6,5 @@ services:
     environment:
       - FEISHU_APP_ID=${FEISHU_APP_ID}
       - FEISHU_APP_SECRET=${FEISHU_APP_SECRET}
-      - GITHUB_PAT=${GITHUB_PAT}
+      - GH_PAT=${GH_PAT}
     restart: unless-stopped

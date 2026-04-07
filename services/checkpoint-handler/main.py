@@ -15,18 +15,18 @@ from lark_oapi.api.im.v1 import *
 
 APP_ID = os.environ["FEISHU_APP_ID"]
 APP_SECRET = os.environ["FEISHU_APP_SECRET"]
-GITHUB_PAT = os.environ.get("GITHUB_PAT", "")
+GH_PAT = os.environ.get("GH_PAT", "")
 
 
 # ── GitHub API helpers ────────────────────────────────────────────────
 
 def github_request(method: str, path: str, body: dict = None):
-    if not GITHUB_PAT:
-        raise RuntimeError("GITHUB_PAT 未配置")
+    if not GH_PAT:
+        raise RuntimeError("GH_PAT 未配置")
     url = f"https://api.github.com{path}"
     data = json.dumps(body).encode() if body else None
     req = urllib.request.Request(url, data=data, method=method)
-    req.add_header("Authorization", f"Bearer {GITHUB_PAT}")
+    req.add_header("Authorization", f"Bearer {GH_PAT}")
     req.add_header("Accept", "application/vnd.github+json")
     req.add_header("X-GitHub-Api-Version", "2022-11-28")
     if data:

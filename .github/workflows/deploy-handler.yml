@@ -61,7 +61,7 @@ jobs:
             IMAGE_TAG=${{ github.sha }}
             FEISHU_APP_ID=${{ secrets.FEISHU_APP_ID }}
             FEISHU_APP_SECRET=${{ secrets.FEISHU_APP_SECRET }}
-            GITHUB_PAT=${{ secrets.GITHUB_PAT }}
+            GH_PAT=${{ secrets.GH_PAT }}
             EOF
 
             docker pull ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/checkpoint-handler:${{ github.sha }}
