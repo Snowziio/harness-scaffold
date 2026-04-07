@@ -74,6 +74,11 @@ jobs:
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
           script: |
-            sleep 5
+            sleep 8
+            echo "=== container status ==="
+            docker ps -a | grep checkpoint || echo "no container"
+            echo "=== container logs ==="
+            docker logs $(docker ps -aq --filter name=checkpoint | head -1) 2>&1 | tail -20 || echo "no logs"
+            echo "=== health check ==="
             curl -sf http://localhost:8002/ || exit 1
             echo "checkpoint-handler healthy"
