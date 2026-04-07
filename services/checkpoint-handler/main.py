@@ -69,9 +69,19 @@ def reject_staging(repo: str, sha: str, reason: str = ""):
 
 # ── 飞书卡片动作处理 ───────────────────────────────────────────────────
 
-def do_card_action(data: lark.card.CardActionTrigger) -> None:
+def do_card_action(data: lark.card.CardActionHandler) -> None:
     try:
-        value = data.event.action.value or {}
+        # lark-oapi 1.5.x: action.value 可能是 dict 或 object
+        raw = data.action if hasattr(data, "action") else {}
+        if hasattr(raw, "value"):
+            value = raw.value or {}
+        elif isinstance(raw, dict):
+            value = raw.get("value", {})
+        else:
+            value = {}
+        if isinstance(value, str):
+            import json as _json
+            value = _json.loads(value)
         action = value.get("action", "")
         repo = value.get("repo", "")
         pr = value.get("pr", "")
