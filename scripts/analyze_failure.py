@@ -15,7 +15,7 @@ def call_minimax(log_content: str) -> str:
         return "⚠️ MINIMAX_API_KEY 未配置，跳过 AI 分析。\n\n请检查测试日志 artifact。"
 
     payload = json.dumps({
-        "model": "MiniMax-M2.7",
+        "model": "MiniMax-M2.5-highspeed",
         "messages": [
             {
                 "role": "system",
@@ -38,7 +38,7 @@ def call_minimax(log_content: str) -> str:
     }).encode()
 
     req = urllib.request.Request(
-        "https://api.minimax.io/v1/text/chatcompletion_v2",
+        "https://api.minimaxi.com/v1/text/chatcompletion_v2",
         data=payload,
         headers={
             "Content-Type": "application/json",
