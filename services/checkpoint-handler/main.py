@@ -12,6 +12,10 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import lark_oapi as lark
 from lark_oapi.api.im.v1 import *
+from lark_oapi.event.callback.model.p2_card_action_trigger import (
+    P2CardActionTrigger,
+    P2CardActionTriggerResponse,
+)
 
 APP_ID = os.environ["FEISHU_APP_ID"]
 APP_SECRET = os.environ["FEISHU_APP_SECRET"]
@@ -156,25 +160,36 @@ def reject_staging(repo: str, sha: str, reason: str = ""):
 
 # ── 飞书卡片动作处理 ───────────────────────────────────────────────────
 
-def do_card_action(data: lark.card.CardActionHandler) -> None:
+def do_card_action(data: P2CardActionTrigger) -> P2CardActionTriggerResponse:
     """WebSocket 卡片回调入口，解析后转发给 _dispatch_action"""
-    raw = data.action if hasattr(data, "action") else {}
-    if hasattr(raw, "value"):
-        value = raw.value or {}
-    elif isinstance(raw, dict):
-        value = raw.get("value", {})
-    else:
-        value = {}
-    if isinstance(value, str):
-        value = json.loads(value)
-    act      = value.get("action", "")
-    repo     = value.get("repo", "")
-    pr       = value.get("pr", "")
-    sha      = value.get("sha", "")
-    customer = value.get("customer", "")
-    reason   = value.get("reason", "")
-    print(f"[checkpoint] WS 收到动作: {act} | repo={repo} pr={pr} sha={sha}")
-    _dispatch_action(act, repo, pr, sha, customer, reason)
+    try:
+        action = data.event.action if (data.event and data.event.action) else {}
+        value = getattr(action, "value", None) or {}
+        if isinstance(value, str):
+            value = json.loads(value)
+        act      = value.get("action", "")
+        repo     = value.get("repo", "")
+        pr       = value.get("pr", "")
+        sha      = value.get("sha", "")
+        customer = value.get("customer", "")
+        reason   = value.get("reason", "")
+        print(f"[checkpoint] WS 收到动作: {act} | repo={repo} pr={pr} sha={sha}")
+        # 业务逻辑放后台线程，立即返回 toast 给前端
+        threading.Thread(
+            target=_dispatch_action,
+            args=(act, repo, pr, sha, customer, reason),
+            daemon=True,
+        ).start()
+        toast_msg = {
+            "merge_pr": "正在合并 PR，请稍候…",
+            "reject_pr": "已打回，正在通知开发者…",
+            "deploy_customer": "正在触发客户部署…",
+            "reject_staging": "已打回 Staging，正在创建 Issue…",
+        }.get(act, "操作已收到")
+        return P2CardActionTriggerResponse({"toast": {"type": "info", "content": toast_msg}})
+    except Exception as e:
+        print(f"[checkpoint] WS 处理失败: {e}")
+        return P2CardActionTriggerResponse({"toast": {"type": "error", "content": "处理失败，请查看日志"}})
 
 
 # ── 健康检查 HTTP 服务（供 Docker healthcheck 使用）────────────────────
