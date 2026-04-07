@@ -68,7 +68,12 @@ jobs:
             docker compose -f ~/services/docker-compose.handler.yml --env-file ~/services/.env up -d --pull always --force-recreate
 
       - name: Smoke test handler
-        run: |
-          sleep 10
-          curl --retry 3 --retry-delay 3 --fail \
-            http://${{ secrets.ECS_HOST }}:8002/
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          script: |
+            sleep 5
+            curl -sf http://localhost:8002/ || exit 1
+            echo "checkpoint-handler healthy"
