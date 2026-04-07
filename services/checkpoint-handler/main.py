@@ -157,39 +157,24 @@ def reject_staging(repo: str, sha: str, reason: str = ""):
 # ── 飞书卡片动作处理 ───────────────────────────────────────────────────
 
 def do_card_action(data: lark.card.CardActionHandler) -> None:
-    try:
-        # lark-oapi 1.5.x: action.value 可能是 dict 或 object
-        raw = data.action if hasattr(data, "action") else {}
-        if hasattr(raw, "value"):
-            value = raw.value or {}
-        elif isinstance(raw, dict):
-            value = raw.get("value", {})
-        else:
-            value = {}
-        if isinstance(value, str):
-            import json as _json
-            value = _json.loads(value)
-        action = value.get("action", "")
-        repo = value.get("repo", "")
-        pr = value.get("pr", "")
-        sha = value.get("sha", "")
-        customer = value.get("customer", "")
-        reason = value.get("reason", "")
-
-        print(f"[checkpoint] 收到动作: {action} | repo={repo} pr={pr} sha={sha}")
-
-        if action == "merge_pr" and repo and pr:
-            merge_pr(repo, pr)
-        elif action == "reject_pr" and repo and pr:
-            reject_pr(repo, pr, reason)
-        elif action == "deploy_customer" and repo:
-            trigger_deploy(repo, customer, sha)
-        elif action == "reject_staging" and repo:
-            reject_staging(repo, sha, reason)
-        else:
-            print(f"[checkpoint] 未知或参数不完整的动作: {action}")
-    except Exception as e:
-        print(f"[checkpoint] 处理失败: {e}")
+    """WebSocket 卡片回调入口，解析后转发给 _dispatch_action"""
+    raw = data.action if hasattr(data, "action") else {}
+    if hasattr(raw, "value"):
+        value = raw.value or {}
+    elif isinstance(raw, dict):
+        value = raw.get("value", {})
+    else:
+        value = {}
+    if isinstance(value, str):
+        value = json.loads(value)
+    act      = value.get("action", "")
+    repo     = value.get("repo", "")
+    pr       = value.get("pr", "")
+    sha      = value.get("sha", "")
+    customer = value.get("customer", "")
+    reason   = value.get("reason", "")
+    print(f"[checkpoint] WS 收到动作: {act} | repo={repo} pr={pr} sha={sha}")
+    _dispatch_action(act, repo, pr, sha, customer, reason)
 
 
 # ── 健康检查 HTTP 服务（供 Docker healthcheck 使用）────────────────────
@@ -201,8 +186,64 @@ class HealthHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b'{"status":"ok","service":"checkpoint-handler"}')
 
+    def do_POST(self):
+        """处理飞书卡片 HTTP 回调（消息卡片请求网址模式）"""
+        length = int(self.headers.get("Content-Length", 0))
+        body = json.loads(self.rfile.read(length)) if length else {}
+
+        # 飞书 URL 验证（首次配置时的 challenge 握手）
+        if body.get("type") == "url_verification":
+            resp = json.dumps({"challenge": body.get("challenge", "")}).encode()
+            self._json_response(resp)
+            return
+
+        # 卡片动作回调
+        if body.get("type") == "card":
+            action = body.get("action", {})
+            value = action.get("value", {})
+            if isinstance(value, str):
+                value = json.loads(value)
+            act     = value.get("action", "")
+            repo    = value.get("repo", "")
+            pr      = value.get("pr", "")
+            sha     = value.get("sha", "")
+            customer = value.get("customer", "")
+            reason  = value.get("reason", "")
+            print(f"[checkpoint] HTTP 收到动作: {act} | repo={repo} pr={pr} sha={sha}")
+            # 飞书要求 3 秒内响应，业务逻辑放后台线程
+            threading.Thread(
+                target=_dispatch_action,
+                args=(act, repo, pr, sha, customer, reason),
+                daemon=True,
+            ).start()
+
+        self._json_response(b'{"StatusCode":0}')
+
+    def _json_response(self, body: bytes):
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(body)
+
     def log_message(self, *args):
         pass  # 静默访问日志
+
+
+def _dispatch_action(act: str, repo: str, pr: str, sha: str, customer: str, reason: str):
+    """卡片动作统一分发（供 HTTP 和 WebSocket 两路复用）"""
+    try:
+        if act == "merge_pr" and repo and pr:
+            merge_pr(repo, pr)
+        elif act == "reject_pr" and repo and pr:
+            reject_pr(repo, pr, reason)
+        elif act == "deploy_customer" and repo:
+            trigger_deploy(repo, customer, sha)
+        elif act == "reject_staging" and repo:
+            reject_staging(repo, sha, reason)
+        else:
+            print(f"[checkpoint] 未知或参数不完整的动作: {act}")
+    except Exception as e:
+        print(f"[checkpoint] 处理失败: {e}")
 
 
 def start_health_server(port: int = 8002):
