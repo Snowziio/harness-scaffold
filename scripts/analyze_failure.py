@@ -47,6 +47,12 @@ def call_minimax(log_content: str) -> str:
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
         data = json.loads(resp.read())
+
+    # 检查 API 层错误
+    base = data.get("base_resp", {})
+    if base.get("status_code", 0) != 0:
+        raise RuntimeError(f"MiniMax API 错误: {base}")
+
     return data["choices"][0]["message"]["content"]
 
 
