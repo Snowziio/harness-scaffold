@@ -94,13 +94,18 @@ def merge_pr(repo: str, pr: str):
         print(f"[checkpoint] PR #{pr} 状态为 {pr_data.get('state')}，无法合并")
         return
 
-    # CI 检查状态校验
+    # CI 检查状态校验：必须全部 completed 且结论成功
     head_sha = pr_data.get("head", {}).get("sha", "")
     if head_sha:
         checks = github_request("GET", f"/repos/{repo}/commits/{head_sha}/check-runs")
+        runs = checks.get("check_runs", [])
+        pending = [r["name"] for r in runs if r.get("status") != "completed"]
+        if pending:
+            print(f"[checkpoint] ⛔ CI 仍在运行，拒绝合并。未完成项: {pending}")
+            return
         failed = [
-            r["name"] for r in checks.get("check_runs", [])
-            if r.get("conclusion") not in ("success", "skipped", "neutral", None)
+            r["name"] for r in runs
+            if r.get("conclusion") not in ("success", "skipped", "neutral")
         ]
         if failed:
             print(f"[checkpoint] ⛔ CI 未全部通过，拒绝合并。失败项: {failed}")
