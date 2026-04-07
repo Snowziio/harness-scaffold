@@ -2,8 +2,9 @@ services:
   checkpoint-handler:
     image: ${ACR_REGISTRY}/${ACR_NAMESPACE}/checkpoint-handler:${IMAGE_TAG:-latest}
     ports:
-      - "8002:8002"
+      - "8002:8002"   # 仅用于 Docker healthcheck，无需对外暴露
     environment:
-      - FEISHU_VERIFICATION_TOKEN=${FEISHU_VERIFICATION_TOKEN}
+      - FEISHU_APP_ID=${FEISHU_APP_ID}
+      - FEISHU_APP_SECRET=${FEISHU_APP_SECRET}
       - GITHUB_PAT=${GITHUB_PAT}
     restart: unless-stopped

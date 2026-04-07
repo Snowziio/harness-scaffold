@@ -59,7 +59,8 @@ jobs:
             ACR_REGISTRY=${{ secrets.ACR_REGISTRY }}
             ACR_NAMESPACE=${{ secrets.ACR_NAMESPACE }}
             IMAGE_TAG=${{ github.sha }}
-            FEISHU_VERIFICATION_TOKEN=${{ secrets.FEISHU_VERIFICATION_TOKEN }}
+            FEISHU_APP_ID=${{ secrets.FEISHU_APP_ID }}
+            FEISHU_APP_SECRET=${{ secrets.FEISHU_APP_SECRET }}
             GITHUB_PAT=${{ secrets.GITHUB_PAT }}
             EOF
 
@@ -68,6 +69,6 @@ jobs:
 
       - name: Smoke test handler
         run: |
-          sleep 5
-          curl --retry 3 --retry-delay 2 --fail \
-            http://${{ secrets.ECS_HOST }}:8002/health
+          sleep 10
+          curl --retry 3 --retry-delay 3 --fail \
+            http://${{ secrets.ECS_HOST }}:8002/
