@@ -65,7 +65,7 @@ jobs:
             EOF
 
             docker pull ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/checkpoint-handler:${{ github.sha }}
-            docker compose -f ~/services/docker-compose.handler.yml --env-file ~/services/.env up -d --pull always
+            docker compose -f ~/services/docker-compose.handler.yml --env-file ~/services/.env up -d --pull always --force-recreate
 
       - name: Smoke test handler
         run: |
