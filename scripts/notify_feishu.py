@@ -1,13 +1,22 @@
 """
 飞书通知脚本 - 卡点事件通知
-使用飞书自建应用 API 发送消息到指定群
+使用飞书自建应用 API 发送互动卡片消息到指定群
 """
 import argparse
 import os
 import json
 import urllib.request
 
-EVENTS = {
+
+# 卡片颜色主题
+CARD_TEMPLATES = {
+    "ci_passed":     "green",
+    "ci_failed":     "red",
+    "staging_ready": "blue",
+    "deploy_done":   "green",
+}
+
+CARD_TITLES = {
     "ci_passed":     "✅ CI 通过，等待合并",
     "ci_failed":     "❌ CI 失败，需要修复",
     "staging_ready": "🚀 Staging 已就绪，等待验收",
@@ -29,11 +38,78 @@ def get_tenant_access_token(app_id: str, app_secret: str) -> str:
     return data["tenant_access_token"]
 
 
-def send_message(token: str, chat_id: str, text: str):
+def build_card(event: str, repo: str, pr: str, sha: str) -> dict:
+    """构建飞书互动卡片"""
+    body_lines = []
+    if repo:
+        body_lines.append(f"**仓库**: {repo}")
+    if pr:
+        body_lines.append(f"**PR**: #{pr}")
+    if sha:
+        body_lines.append(f"**SHA**: `{sha[:8]}`")
+    body_md = "\n".join(body_lines) if body_lines else "无附加信息"
+
+    elements = [
+        {
+            "tag": "div",
+            "text": {"tag": "lark_md", "content": body_md},
+        }
+    ]
+
+    # ci_passed：合并 / 拒绝 按钮
+    if event == "ci_passed" and pr and repo:
+        elements.append({
+            "tag": "action",
+            "actions": [
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "合并 PR"},
+                    "type": "primary",
+                    "value": {"action": "merge_pr", "repo": repo, "pr": pr},
+                },
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "拒绝并注释"},
+                    "type": "danger",
+                    "value": {"action": "reject_pr", "repo": repo, "pr": pr},
+                },
+            ],
+        })
+
+    # staging_ready：发布到客户 / 打回 按钮
+    if event == "staging_ready" and repo:
+        elements.append({
+            "tag": "action",
+            "actions": [
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "发布到客户环境"},
+                    "type": "primary",
+                    "value": {"action": "deploy_customer", "repo": repo, "sha": sha},
+                },
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "打回修改"},
+                    "type": "danger",
+                    "value": {"action": "reject_staging", "repo": repo, "sha": sha},
+                },
+            ],
+        })
+
+    return {
+        "header": {
+            "title": {"tag": "plain_text", "content": CARD_TITLES[event]},
+            "template": CARD_TEMPLATES[event],
+        },
+        "elements": elements,
+    }
+
+
+def send_card(token: str, chat_id: str, card: dict):
     payload = json.dumps({
         "receive_id": chat_id,
-        "msg_type": "text",
-        "content": json.dumps({"text": text}),
+        "msg_type": "interactive",
+        "content": json.dumps(card),
     }).encode()
     req = urllib.request.Request(
         "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id",
@@ -46,12 +122,12 @@ def send_message(token: str, chat_id: str, text: str):
     with urllib.request.urlopen(req, timeout=10) as resp:
         data = json.loads(resp.read())
     if data.get("code") != 0:
-        raise RuntimeError(f"发送消息失败: {data}")
+        raise RuntimeError(f"发送卡片失败: {data}")
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--event", required=True, choices=EVENTS.keys())
+    parser.add_argument("--event", required=True, choices=CARD_TITLES.keys())
     parser.add_argument("--repo", default="")
     parser.add_argument("--sha", default="")
     parser.add_argument("--pr", default="")
@@ -61,22 +137,15 @@ def main():
     app_secret = os.environ.get("FEISHU_APP_SECRET", "")
     chat_id = os.environ.get("FEISHU_CHAT_ID", "")
 
-    msg = EVENTS[args.event]
-    if args.repo:
-        msg += f"\nRepo: {args.repo}"
-    if args.pr:
-        msg += f"\nPR: #{args.pr}"
-    if args.sha:
-        msg += f"\nSHA: {args.sha[:8]}"
-
     if not all([app_id, app_secret, chat_id]):
         print("[notify_feishu] 环境变量未配置（FEISHU_APP_ID/APP_SECRET/CHAT_ID），跳过发送")
-        print(f"[notify_feishu] 消息内容: {msg}")
+        print(f"[notify_feishu] 事件: {args.event}")
         return
 
     token = get_tenant_access_token(app_id, app_secret)
-    send_message(token, chat_id, msg)
-    print(f"[notify_feishu] 已发送: {msg}")
+    card = build_card(args.event, args.repo, args.pr, args.sha)
+    send_card(token, chat_id, card)
+    print(f"[notify_feishu] 已发送卡片: {args.event}")
 
 
 if __name__ == "__main__":

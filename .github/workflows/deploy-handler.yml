@@ -1,0 +1,73 @@
+name: Deploy Checkpoint Handler
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'services/checkpoint-handler/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to ACR
+        run: |
+          docker login \
+            --username ${{ secrets.ACR_USERNAME }} \
+            --password ${{ secrets.ACR_PASSWORD }} \
+            ${{ secrets.ACR_REGISTRY }}
+
+      - name: Build and push handler image
+        run: |
+          IMAGE=${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/checkpoint-handler
+          docker build -f services/checkpoint-handler/Dockerfile \
+            -t $IMAGE:${{ github.sha }} \
+            -t $IMAGE:latest \
+            services/checkpoint-handler/
+          docker push $IMAGE:${{ github.sha }}
+          docker push $IMAGE:latest
+
+      - name: Copy handler compose file
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          source: docker/docker-compose.handler.yml
+          target: ~/services/
+          strip_components: 1
+
+      - name: Deploy handler to ECS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          script: |
+            set -e
+            mkdir -p ~/services
+
+            docker login \
+              --username ${{ secrets.ACR_USERNAME }} \
+              --password ${{ secrets.ACR_PASSWORD }} \
+              ${{ secrets.ACR_REGISTRY }}
+
+            cat > ~/services/.env << EOF
+            ACR_REGISTRY=${{ secrets.ACR_REGISTRY }}
+            ACR_NAMESPACE=${{ secrets.ACR_NAMESPACE }}
+            IMAGE_TAG=${{ github.sha }}
+            FEISHU_VERIFICATION_TOKEN=${{ secrets.FEISHU_VERIFICATION_TOKEN }}
+            GITHUB_PAT=${{ secrets.GITHUB_PAT }}
+            EOF
+
+            docker pull ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/checkpoint-handler:${{ github.sha }}
+            docker compose -f ~/services/docker-compose.handler.yml --env-file ~/services/.env up -d --pull always
+
+      - name: Smoke test handler
+        run: |
+          sleep 5
+          curl --retry 3 --retry-delay 2 --fail \
+            http://${{ secrets.ECS_HOST }}:8002/health

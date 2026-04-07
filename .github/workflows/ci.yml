@@ -15,7 +15,7 @@ jobs:
           mkdir -p reports
           docker compose -f docker/docker-compose.test.yml up \
             --abort-on-container-exit \
-            --exit-code-from test
+            --exit-code-from test 2>&1 | tee reports/test-output.log
 
       - name: Upload test report
         if: always()
@@ -23,6 +23,17 @@ jobs:
         with:
           name: test-report
           path: reports/
+
+      - name: AI failure analysis
+        if: failure()
+        run: |
+          python scripts/analyze_failure.py reports/test-output.log > reports/ai-analysis.md
+          cat reports/ai-analysis.md
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --body-file reports/ai-analysis.md
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
 
       - name: Notify Feishu on success
         if: success()
