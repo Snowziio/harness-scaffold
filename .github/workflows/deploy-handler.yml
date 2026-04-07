@@ -63,6 +63,7 @@ jobs:
             FEISHU_APP_SECRET=${{ secrets.FEISHU_APP_SECRET }}
             FEISHU_CHAT_ID=${{ secrets.FEISHU_CHAT_ID }}
             GH_PAT=${{ secrets.GH_PAT }}
+            ALLOWED_REPOS=${{ secrets.ALLOWED_REPOS }}
             EOF
 
             docker pull ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/checkpoint-handler:${{ github.sha }}

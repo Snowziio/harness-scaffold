@@ -17,6 +17,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Copy prod compose to customer dir
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          source: docker/docker-compose.prod.yml
+          target: ~/customers/${{ github.event.inputs.customer_name }}/${{ github.event.repository.name }}/
+          strip_components: 1
+
       - name: Deploy to customer environment
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -26,7 +36,7 @@ jobs:
           script: |
             set -e
             bash ~/deploy/deploy.sh \
-              ${{ github.inputs.customer_name }} \
+              ${{ github.event.inputs.customer_name }} \
               ${{ github.event.repository.name }} \
               ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }} \
               ${{ github.event.inputs.image_tag }}

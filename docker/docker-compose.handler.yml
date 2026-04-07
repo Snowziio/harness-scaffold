@@ -8,4 +8,5 @@ services:
       - FEISHU_APP_SECRET=${FEISHU_APP_SECRET}
       - FEISHU_CHAT_ID=${FEISHU_CHAT_ID}
       - GH_PAT=${GH_PAT}
+      - ALLOWED_REPOS=${ALLOWED_REPOS:-}
     restart: unless-stopped

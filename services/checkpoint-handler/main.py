@@ -17,6 +17,8 @@ APP_ID = os.environ["FEISHU_APP_ID"]
 APP_SECRET = os.environ["FEISHU_APP_SECRET"]
 GH_PAT = os.environ.get("GH_PAT", "")
 FEISHU_CHAT_ID = os.environ.get("FEISHU_CHAT_ID", "")
+# 逗号分隔的允许操作的仓库白名单，为空则不限制（新项目部署时记得配置）
+ALLOWED_REPOS = set(filter(None, os.environ.get("ALLOWED_REPOS", "").split(",")))
 
 
 # ── 飞书消息发送 ──────────────────────────────────────────────────────
@@ -78,11 +80,37 @@ def github_request(method: str, path: str, body: dict = None):
 
 
 def merge_pr(repo: str, pr: str):
+    # 仓库白名单校验
+    if ALLOWED_REPOS and repo not in ALLOWED_REPOS:
+        print(f"[checkpoint] ⛔ 仓库 {repo} 不在白名单 {ALLOWED_REPOS}，拒绝合并")
+        return
+
+    # 幂等性：检查 PR 是否已合并或已关闭
+    pr_data = github_request("GET", f"/repos/{repo}/pulls/{pr}")
+    if pr_data.get("merged"):
+        print(f"[checkpoint] PR #{pr} 已合并，跳过重复操作")
+        return
+    if pr_data.get("state") != "open":
+        print(f"[checkpoint] PR #{pr} 状态为 {pr_data.get('state')}，无法合并")
+        return
+
+    # CI 检查状态校验
+    head_sha = pr_data.get("head", {}).get("sha", "")
+    if head_sha:
+        checks = github_request("GET", f"/repos/{repo}/commits/{head_sha}/check-runs")
+        failed = [
+            r["name"] for r in checks.get("check_runs", [])
+            if r.get("conclusion") not in ("success", "skipped", "neutral", None)
+        ]
+        if failed:
+            print(f"[checkpoint] ⛔ CI 未全部通过，拒绝合并。失败项: {failed}")
+            return
+
     github_request("PUT", f"/repos/{repo}/pulls/{pr}/merge", {
         "merge_method": "squash",
         "commit_title": f"Approved via Feishu (PR #{pr})",
     })
-    print(f"[checkpoint] ✅ 合并 PR #{pr} in {repo}")
+    print(f"[checkpoint] ✅ 合并 PR #{pr} in {repo} head={head_sha[:8] if head_sha else '?'}")
 
 
 def reject_pr(repo: str, pr: str, reason: str = ""):

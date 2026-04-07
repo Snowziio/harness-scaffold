@@ -119,7 +119,7 @@ def build_card(event: str, repo: str, pr: str, sha: str) -> dict:
                     "tag": "button",
                     "text": {"tag": "plain_text", "content": "发布到客户环境"},
                     "type": "primary",
-                    "value": {"action": "deploy_customer", "repo": repo, "sha": sha},
+                    "value": {"action": "deploy_customer", "repo": repo, "sha": sha[:8] if sha else "", "customer": "default"},
                 },
                 {
                     "tag": "button",

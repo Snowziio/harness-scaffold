@@ -12,6 +12,7 @@ jobs:
 
       - name: Run Harness
         run: |
+          set -o pipefail
           mkdir -p reports
           docker compose -f docker/docker-compose.test.yml up \
             --abort-on-container-exit \
