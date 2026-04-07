@@ -16,6 +16,47 @@ from lark_oapi.api.im.v1 import *
 APP_ID = os.environ["FEISHU_APP_ID"]
 APP_SECRET = os.environ["FEISHU_APP_SECRET"]
 GH_PAT = os.environ.get("GH_PAT", "")
+FEISHU_CHAT_ID = os.environ.get("FEISHU_CHAT_ID", "")
+
+
+# ── 飞书消息发送 ──────────────────────────────────────────────────────
+
+def send_feishu_text(text: str) -> None:
+    """向群发送纯文本消息（用于打回通知）"""
+    if not FEISHU_CHAT_ID:
+        print("[checkpoint] FEISHU_CHAT_ID 未配置，跳过飞书通知")
+        return
+    # 获取 tenant_access_token
+    token_req = urllib.request.Request(
+        "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+        data=json.dumps({"app_id": APP_ID, "app_secret": APP_SECRET}).encode(),
+        method="POST",
+    )
+    token_req.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(token_req, timeout=10) as r:
+        token_data = json.loads(r.read())
+    access_token = token_data.get("tenant_access_token", "")
+    if not access_token:
+        print(f"[checkpoint] 获取飞书 token 失败: {token_data}")
+        return
+    # 发送消息
+    msg_req = urllib.request.Request(
+        "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id",
+        data=json.dumps({
+            "receive_id": FEISHU_CHAT_ID,
+            "msg_type": "text",
+            "content": json.dumps({"text": text}),
+        }).encode(),
+        method="POST",
+    )
+    msg_req.add_header("Authorization", f"Bearer {access_token}")
+    msg_req.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(msg_req, timeout=10) as r:
+        resp = json.loads(r.read())
+    if resp.get("code", 0) != 0:
+        print(f"[checkpoint] 飞书消息发送失败: {resp}")
+    else:
+        print("[checkpoint] 飞书打回通知已发送")
 
 
 # ── GitHub API helpers ────────────────────────────────────────────────
@@ -48,6 +89,12 @@ def reject_pr(repo: str, pr: str, reason: str = ""):
     comment = f"❌ **卡点2 · 质量门拒绝**\n\n{reason or '请修复后重新提交。'}"
     github_request("POST", f"/repos/{repo}/issues/{pr}/comments", {"body": comment})
     print(f"[checkpoint] ❌ 拒绝 PR #{pr} in {repo}")
+    send_feishu_text(
+        f"❌ PR #{pr} 已打回\n"
+        f"仓库：{repo}\n"
+        f"原因：{reason or '请修复后重新提交'}\n\n"
+        f"修复后推送到同一分支，CI 将自动重新运行。"
+    )
 
 
 def trigger_deploy(repo: str, customer: str, sha: str):
@@ -65,6 +112,13 @@ def reject_staging(repo: str, sha: str, reason: str = ""):
         "labels": ["staging-rejected"],
     })
     print(f"[checkpoint] 🔙 打回 Staging {repo} @ {sha}")
+    send_feishu_text(
+        f"🔙 Staging 验收打回\n"
+        f"仓库：{repo}\n"
+        f"SHA：{sha[:8] if sha else 'unknown'}\n"
+        f"原因：{reason or '需人工说明'}\n\n"
+        f"已在 GitHub 创建 Issue，请修复后重新部署 Staging。"
+    )
 
 
 # ── 飞书卡片动作处理 ───────────────────────────────────────────────────
