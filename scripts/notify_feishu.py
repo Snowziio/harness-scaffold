@@ -44,9 +44,11 @@ def build_card(event: str, repo: str, pr: str, sha: str) -> dict:
     if repo:
         body_lines.append(f"**仓库**: {repo}")
     if pr:
-        body_lines.append(f"**PR**: #{pr}")
+        pr_url = f"https://github.com/{repo}/pull/{pr}"
+        body_lines.append(f"**PR**: [#{pr} 查看代码变更]({pr_url})")
     if sha:
-        body_lines.append(f"**SHA**: `{sha[:8]}`")
+        commit_url = f"https://github.com/{repo}/commit/{sha}"
+        body_lines.append(f"**SHA**: [{sha[:8]}]({commit_url})")
     body_md = "\n".join(body_lines) if body_lines else "无附加信息"
 
     elements = [
@@ -56,11 +58,23 @@ def build_card(event: str, repo: str, pr: str, sha: str) -> dict:
         }
     ]
 
-    # ci_passed：合并 / 拒绝 按钮
+    # ci_passed：Review 链接 + 合并 / 拒绝 按钮
     if event == "ci_passed" and pr and repo:
+        pr_url = f"https://github.com/{repo}/pull/{pr}"
         elements.append({
             "tag": "action",
             "actions": [
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "Review 代码"},
+                    "type": "default",
+                    "multi_url": {
+                        "url": pr_url,
+                        "pc_url": pr_url,
+                        "android_url": pr_url,
+                        "ios_url": pr_url,
+                    },
+                },
                 {
                     "tag": "button",
                     "text": {"tag": "plain_text", "content": "合并 PR"},
@@ -69,9 +83,29 @@ def build_card(event: str, repo: str, pr: str, sha: str) -> dict:
                 },
                 {
                     "tag": "button",
-                    "text": {"tag": "plain_text", "content": "拒绝并注释"},
+                    "text": {"tag": "plain_text", "content": "拒绝"},
                     "type": "danger",
                     "value": {"action": "reject_pr", "repo": repo, "pr": pr},
+                },
+            ],
+        })
+
+    # ci_failed：也附上 PR 链接供查看
+    if event == "ci_failed" and pr and repo:
+        pr_url = f"https://github.com/{repo}/pull/{pr}"
+        elements.append({
+            "tag": "action",
+            "actions": [
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "查看 PR 与 AI 分析"},
+                    "type": "default",
+                    "multi_url": {
+                        "url": pr_url,
+                        "pc_url": pr_url,
+                        "android_url": pr_url,
+                        "ios_url": pr_url,
+                    },
                 },
             ],
         })
