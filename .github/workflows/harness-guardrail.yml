@@ -1,0 +1,89 @@
+name: Harness Guardrail
+
+# 拦截对 harness/tests/REQ-*/ 已锁定目录的修改。
+# 只有 PR body / commits 显式声明 `shell_patched: <REQ-ID>` 的 PR,
+# 才允许修改对应 REQ 目录下的文件。
+#
+# 同时拦截对 acm-registry.yaml 的手工修改:只有 Coordinator(通过
+# spec-lock commit)或带显式治理事件声明(supersedes/retires/shell-patched)
+# 的 PR 才能改 registry。
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'harness/tests/REQ-**'
+      - 'acm-registry.yaml'
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine changed files
+        id: changes
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          CHANGED=$(git diff --name-only "$BASE" "$HEAD")
+          echo "$CHANGED"
+          {
+            echo 'files<<EOF'
+            echo "$CHANGED"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Enforce REQ-* immutability
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -e
+          python3 <<'PY'
+          import os
+          import re
+          import sys
+
+          body = os.environ.get("PR_BODY") or ""
+          changed = os.environ.get("CHANGED_FILES", "").splitlines()
+          req_file_re = re.compile(r"^harness/tests/(REQ-[A-Z0-9]+-\d+)/")
+          registry_re = re.compile(r"^acm-registry\.yaml$")
+
+          shell_patched = set(re.findall(r"shell_patched:\s*(REQ-[A-Z0-9]+-\d+)", body))
+          supersedes = set(re.findall(r"supersedes:\s*(?:\[)?([^\]\n]+)", body))
+          retires = "retires:" in body
+
+          violations = []
+          for line in changed:
+              line = line.strip()
+              if not line:
+                  continue
+              m = req_file_re.match(line)
+              if m:
+                  req_id = m.group(1)
+                  if req_id not in shell_patched:
+                      violations.append(
+                          f"  - {line} modifies locked REQ {req_id} but no "
+                          f"`shell_patched: {req_id}` declaration in PR body"
+                      )
+                  continue
+              if registry_re.match(line):
+                  if not (shell_patched or supersedes or retires):
+                      violations.append(
+                          f"  - acm-registry.yaml modified without any "
+                          f"governance declaration (shell_patched / supersedes / retires) "
+                          f"in PR body. Registry edits must go through Coordinator or a "
+                          f"governance PR."
+                      )
+
+          if violations:
+              print("❌ Harness guardrail violations:")
+              for v in violations:
+                  print(v)
+              sys.exit(1)
+          print("✅ Harness guardrail passed")
+          PY
+        env:
+          CHANGED_FILES: ${{ steps.changes.outputs.files }}

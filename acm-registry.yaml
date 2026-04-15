@@ -1,0 +1,29 @@
+# ACM Registry — 跨 REQ 验收标准治理表
+#
+# 所有已通过卡点 1a 的 REQ 的 AC 都登记在此。
+# CI 在 test collection 阶段读取本文件,决定每条 AC 对应测试是否参与本次运行。
+#
+# 手工编辑本文件是违规操作 —— 只能通过 Coordinator 在 SPEC_LOCKED 时原子写入,
+# 或通过 retirement PR / shell-patch PR(带显式声明)由治理事件驱动。
+#
+# Schema:
+#   requirements:
+#     <REQ-ID>:
+#       spec_locked_at: <ISO-8601 date>
+#       spec_source_revision: <飞书 Spec 文档 revision>
+#       acs:
+#         <AC-ID>:
+#           status: active | superseded_by | retired | shell_patched
+#           by: <REQ-ID>  # superseded_by / retired 必填
+#           since: <ISO-8601 date>  # 状态变更日期
+#           reason: <string>  # 人可读理由
+#
+#   retirements:
+#     <REQ-ID>:  # 专门的"废弃 REQ",无 impl
+#       spec_locked_at: <ISO-8601 date>
+#       retires: [<REQ-ID>#<AC-ID>, ...]
+#       reason: <string>
+
+version: v1
+requirements: {}
+retirements: {}
